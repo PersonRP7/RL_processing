@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: uv-fastapi-initial   # optional tag for convenience
+    container_name: uv_fastapi
+    working_dir: /app
+    volumes:
+      - ./:/app
+    ports:
+     - "${FASTAPI_PORT}:${FASTAPI_PORT}"
+    environment:
+     - FASTAPI_PORT=${FASTAPI_PORT}
+    stdin_open: true
+    tty: true
