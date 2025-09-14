@@ -1,91 +1,122 @@
-import ijson
 import json
+import heapq
+import ijson
+import tempfile
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
-# def convert_to_ndjson(file_path: str, output_dir: str = "/tmp") -> tuple[str, str]:
-#     """
-#     Convert a large JSON file with 'first_names' and 'last_names' arrays
-#     into two NDJSON files, written line by line to avoid memory blowup.
+class NameProcessingService:
+    def __init__(self, base_tmp: str = "/tmp"):
+        """
+        Service for handling name processing tasks.
+        Each request gets its own unique temp dir.
+        """
+        self.base_tmp = Path(base_tmp)
 
-#     Args:
-#         file_path: Path to input JSON file.
-#         output_dir: Directory where NDJSON files will be stored.
+    def convert_to_ndjson_stream(self, file_path: str, batch_size: int = 100):
+        """
+        Convert large JSON to NDJSON files in a unique request-scoped temp dir.
+        Yields lines for streaming back to client.
+        After finishing, runs external_sort_ndjson automatically on each NDJSON file.
+        """
+        output_dir = Path(tempfile.mkdtemp(prefix="ndjson_", dir=self.base_tmp))
+        first_names_path = output_dir / "first_names.ndjson"
+        last_names_path = output_dir / "last_names.ndjson"
 
-#     Returns:
-#         (first_names_path, last_names_path)
-#     """
-#     file_path = Path(file_path)
-#     first_names_path = Path(output_dir) / "first_names.ndjson"
-#     last_names_path = Path(output_dir) / "last_names.ndjson"
+        # Step 1: Convert JSON -> NDJSON
+        with open(file_path, "rb") as infile, \
+             open(first_names_path, "w", encoding="utf-8") as f_first:
 
-#     with open(file_path, "rb") as infile, \
-#          open(first_names_path, "w", encoding="utf-8") as f_first, \
-#          open(last_names_path, "w", encoding="utf-8") as f_last:
-
-#         # Stream first_names
-#         for item in ijson.items(infile, "first_names.item"):
-#             f_first.write(json.dumps(item) + "\n")
-
-#         # Reset file pointer and stream last_names
-#         infile.seek(0)
-#         for item in ijson.items(infile, "last_names.item"):
-#             f_last.write(json.dumps(item) + "\n")
-
-#     return str(first_names_path), str(last_names_path)
-
-
-# def convert_to_ndjson_stream(file_path: str, output_dir: str = "/tmp"):
-#     """
-#     Stream items from large JSON file as NDJSON while also writing them to disk.
-#     Yields each line as bytes for StreamingResponse.
-#     """
-#     file_path = Path(file_path)
-#     first_names_path = Path(output_dir) / "first_names.ndjson"
-#     last_names_path = Path(output_dir) / "last_names.ndjson"
-
-#     with open(file_path, "rb") as infile, \
-#          open(first_names_path, "w", encoding="utf-8") as f_first:
-
-#         for item in ijson.items(infile, "first_names.item"):
-#             line = json.dumps(item) + "\n"
-#             f_first.write(line)
-#             yield line.encode("utf-8")  # stream back to client
-
-#         infile.seek(0)
-#         with open(last_names_path, "w", encoding="utf-8") as f_last:
-#             for item in ijson.items(infile, "last_names.item"):
-#                 line = json.dumps(item) + "\n"
-#                 f_last.write(line)
-#                 yield line.encode("utf-8")
-
-def convert_to_ndjson_stream(file_path: str, output_dir: str = "/tmp", batch_size: int = 100):
-    file_path = Path(file_path)
-    first_names_path = Path(output_dir) / "first_names.ndjson"
-    last_names_path = Path(output_dir) / "last_names.ndjson"
-
-    with open(file_path, "rb") as infile, \
-         open(first_names_path, "w", encoding="utf-8") as f_first:
-
-        buffer = []
-        for item in ijson.items(infile, "first_names.item"):
-            line = json.dumps(item) + "\n"
-            f_first.write(line)
-            buffer.append(line)
-            if len(buffer) >= batch_size:
-                yield "".join(buffer).encode("utf-8")
-                buffer.clear()
-        if buffer:
-            yield "".join(buffer).encode("utf-8")
-
-        infile.seek(0)
-        with open(last_names_path, "w", encoding="utf-8") as f_last:
             buffer = []
-            for item in ijson.items(infile, "last_names.item"):
+            for item in ijson.items(infile, "first_names.item"):
                 line = json.dumps(item) + "\n"
-                f_last.write(line)
+                f_first.write(line)
                 buffer.append(line)
                 if len(buffer) >= batch_size:
                     yield "".join(buffer).encode("utf-8")
                     buffer.clear()
             if buffer:
                 yield "".join(buffer).encode("utf-8")
+
+            infile.seek(0)
+            with open(last_names_path, "w", encoding="utf-8") as f_last:
+                buffer = []
+                for item in ijson.items(infile, "last_names.item"):
+                    line = json.dumps(item) + "\n"
+                    f_last.write(line)
+                    buffer.append(line)
+                    if len(buffer) >= batch_size:
+                        yield "".join(buffer).encode("utf-8")
+                        buffer.clear()
+                if buffer:
+                    yield "".join(buffer).encode("utf-8")
+
+        # Step 2: Automatically sort each NDJSON file
+        yield from self.external_sort_ndjson(first_names_path, batch_size=batch_size)
+        yield from self.external_sort_ndjson(last_names_path, batch_size=batch_size)
+
+    def external_sort_ndjson(
+        self,
+        ndjson_path: Path,
+        batch_size: int = 100,
+        sorted_suffix: str = ".sorted.ndjson"
+    ):
+        """
+        External sort of an NDJSON file on disk. Yields sorted lines in batches.
+        """
+        ndjson_path = Path(ndjson_path)
+        sorted_path = ndjson_path.with_name(ndjson_path.stem + sorted_suffix)
+
+        with TemporaryDirectory(dir=ndjson_path.parent) as tmpdir:
+            chunk_paths = []
+
+            # Chunking: read in memory-limited pieces, sort, write to temp files
+            chunk = []
+            with ndjson_path.open("r", encoding="utf-8") as infile:
+                for line in infile:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    item = json.loads(line)
+                    chunk.append(item)
+                    if len(chunk) >= batch_size:
+                        chunk.sort(key=lambda x: x[1])
+                        chunk_file = Path(tmpdir) / f"chunk_{len(chunk_paths)}.ndjson"
+                        with chunk_file.open("w", encoding="utf-8") as cf:
+                            for obj in chunk:
+                                cf.write(json.dumps(obj) + "\n")
+                        chunk_paths.append(chunk_file)
+                        chunk.clear()
+                if chunk:
+                    chunk.sort(key=lambda x: x[1])
+                    chunk_file = Path(tmpdir) / f"chunk_{len(chunk_paths)}.ndjson"
+                    with chunk_file.open("w", encoding="utf-8") as cf:
+                        for obj in chunk:
+                            cf.write(json.dumps(obj) + "\n")
+                    chunk_paths.append(chunk_file)
+
+            # Merge sorted chunks
+            def gen_file_lines(path: Path):
+                with path.open("r", encoding="utf-8") as f:
+                    for line in f:
+                        yield json.loads(line)
+
+            merged_iter = heapq.merge(
+                *(gen_file_lines(p) for p in chunk_paths),
+                key=lambda x: x[1]
+            )
+
+            # Write merged output and yield in batches
+            buffer = []
+            with sorted_path.open("w", encoding="utf-8") as out:
+                for obj in merged_iter:
+                    line = json.dumps(obj) + "\n"
+                    out.write(line)
+                    buffer.append(line)
+                    if len(buffer) >= batch_size:
+                        yield "".join(buffer).encode("utf-8")
+                        buffer.clear()
+                if buffer:
+                    yield "".join(buffer).encode("utf-8")
+
+        yield f"# Sorted NDJSON written to {sorted_path}\n".encode("utf-8")
