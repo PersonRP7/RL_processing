@@ -5,19 +5,18 @@ from services.name_processing import convert_to_ndjson_stream
 
 app = FastAPI()
 
-
 @app.post("/upload-json-stream")
 async def upload_json_stream(request: Request):
-    # Save incoming file to temp first (still chunked, avoids memory blowup)
     temp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
 
     async for chunk in request.stream():
         temp.write(chunk)
-
     temp.close()
 
-    # Return a StreamingResponse that streams NDJSON back to client
+    # Each request gets its own unique directory
+    unique_dir = tempfile.mkdtemp(prefix="ndjson_")
+
     return StreamingResponse(
-        convert_to_ndjson_stream(temp.name),
+        convert_to_ndjson_stream(temp.name, output_dir=unique_dir),
         media_type="application/x-ndjson"
     )
