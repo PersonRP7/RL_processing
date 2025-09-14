@@ -1,16 +1,15 @@
+import json
 import heapq
 import ijson
-import json
 import tempfile
 from pathlib import Path
-from typing import Iterator
-
+from tempfile import TemporaryDirectory
 
 class NameProcessingService:
     def __init__(self, base_tmp: str = "/tmp"):
         """
         Service for handling name processing tasks.
-        Each request will get its own temp namespace dir under base_tmp.
+        Each request gets its own unique temp dir.
         """
         self.base_tmp = Path(base_tmp)
 
@@ -18,12 +17,13 @@ class NameProcessingService:
         """
         Convert large JSON to NDJSON files in a unique request-scoped temp dir.
         Yields lines for streaming back to client.
-        After writing, automatically sorts both NDJSON outputs by ID.
+        After finishing, runs external_sort_ndjson automatically on each NDJSON file.
         """
         output_dir = Path(tempfile.mkdtemp(prefix="ndjson_", dir=self.base_tmp))
         first_names_path = output_dir / "first_names.ndjson"
         last_names_path = output_dir / "last_names.ndjson"
 
+        # Step 1: Convert JSON -> NDJSON
         with open(file_path, "rb") as infile, \
              open(first_names_path, "w", encoding="utf-8") as f_first:
 
@@ -51,54 +51,72 @@ class NameProcessingService:
                 if buffer:
                     yield "".join(buffer).encode("utf-8")
 
-        # --- sort the files once they are fully written ---
-        sorted_first = self.external_sort_ndjson(first_names_path)
-        sorted_last = self.external_sort_ndjson(last_names_path)
+        # Step 2: Automatically sort each NDJSON file
+        yield from self.external_sort_ndjson(first_names_path, batch_size=batch_size)
+        yield from self.external_sort_ndjson(last_names_path, batch_size=batch_size)
 
-        yield f"# Files written to {output_dir}\n".encode("utf-8")
-        yield f"# Sorted files: {sorted_first}, {sorted_last}\n".encode("utf-8")
-
-    def external_sort_ndjson(self, file_path: Path, key_index: int = 1, chunk_size: int = 100_000) -> Path:
+    def external_sort_ndjson(
+        self,
+        ndjson_path: Path,
+        batch_size: int = 100,
+        sorted_suffix: str = ".sorted.ndjson"
+    ):
         """
-        External merge sort on NDJSON file by a key index (disk-backed).
-        Returns path to sorted file.
+        External sort of an NDJSON file on disk. Yields sorted lines in batches.
         """
-        file_path = Path(file_path)
-        output_path = file_path.with_suffix(".sorted.ndjson")
-        temp_files = []
+        ndjson_path = Path(ndjson_path)
+        sorted_path = ndjson_path.with_name(ndjson_path.stem + sorted_suffix)
 
-        # --- Step 1: break into sorted chunks ---
-        with open(file_path, "r", encoding="utf-8") as infile:
+        with TemporaryDirectory(dir=ndjson_path.parent) as tmpdir:
+            chunk_paths = []
+
+            # Chunking: read in memory-limited pieces, sort, write to temp files
             chunk = []
-            for line in infile:
-                item = json.loads(line)
-                chunk.append(item)
-                if len(chunk) >= chunk_size:
-                    temp_files.append(self._write_sorted_chunk(chunk, key_index))
-                    chunk.clear()
-            if chunk:  # leftover
-                temp_files.append(self._write_sorted_chunk(chunk, key_index))
+            with ndjson_path.open("r", encoding="utf-8") as infile:
+                for line in infile:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    item = json.loads(line)
+                    chunk.append(item)
+                    if len(chunk) >= batch_size:
+                        chunk.sort(key=lambda x: x[1])
+                        chunk_file = Path(tmpdir) / f"chunk_{len(chunk_paths)}.ndjson"
+                        with chunk_file.open("w", encoding="utf-8") as cf:
+                            for obj in chunk:
+                                cf.write(json.dumps(obj) + "\n")
+                        chunk_paths.append(chunk_file)
+                        chunk.clear()
+                if chunk:
+                    chunk.sort(key=lambda x: x[1])
+                    chunk_file = Path(tmpdir) / f"chunk_{len(chunk_paths)}.ndjson"
+                    with chunk_file.open("w", encoding="utf-8") as cf:
+                        for obj in chunk:
+                            cf.write(json.dumps(obj) + "\n")
+                    chunk_paths.append(chunk_file)
 
-        # --- Step 2: merge sorted chunks ---
-        def iter_file(file: Path) -> Iterator[list]:
-            with open(file, "r", encoding="utf-8") as f:
-                for line in f:
-                    yield json.loads(line)
+            # Merge sorted chunks
+            def gen_file_lines(path: Path):
+                with path.open("r", encoding="utf-8") as f:
+                    for line in f:
+                        yield json.loads(line)
 
-        sorted_iters = [iter_file(p) for p in temp_files]
-        with open(output_path, "w", encoding="utf-8") as outfile:
-            for item in heapq.merge(*sorted_iters, key=lambda x: x[key_index]):
-                outfile.write(json.dumps(item) + "\n")
+            merged_iter = heapq.merge(
+                *(gen_file_lines(p) for p in chunk_paths),
+                key=lambda x: x[1]
+            )
 
-        # cleanup
-        for p in temp_files:
-            p.unlink()
+            # Write merged output and yield in batches
+            buffer = []
+            with sorted_path.open("w", encoding="utf-8") as out:
+                for obj in merged_iter:
+                    line = json.dumps(obj) + "\n"
+                    out.write(line)
+                    buffer.append(line)
+                    if len(buffer) >= batch_size:
+                        yield "".join(buffer).encode("utf-8")
+                        buffer.clear()
+                if buffer:
+                    yield "".join(buffer).encode("utf-8")
 
-        return output_path
-
-    def _write_sorted_chunk(self, chunk: list, key_index: int) -> Path:
-        """Helper: sort chunk and write to temp file."""
-        chunk.sort(key=lambda x: x[key_index])
-        fd, path = tempfile.mkstemp(suffix=".ndjson", prefix="chunk_")
-        Path(path).write_text("\n".join(json.dumps(item) for item in chunk), encoding="utf-8")
-        return Path(path)
+        yield f"# Sorted NDJSON written to {sorted_path}\n".encode("utf-8")
