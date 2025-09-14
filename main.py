@@ -1,22 +1,29 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
+from fastapi.responses import StreamingResponse
 import tempfile
-from fastapi.responses import JSONResponse, StreamingResponse
-from services.name_processing import convert_to_ndjson_stream
+
+from services.name_processing import NameProcessingService
 
 app = FastAPI()
 
-@app.post("/upload-json-stream")
-async def upload_json_stream(request: Request):
-    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+# Create one service instance (could later be swapped for a different implementation)
+def get_name_service():
+    return NameProcessingService()
 
+
+@app.post("/upload-json-stream")
+async def upload_json_stream(
+    request: Request,
+    service: NameProcessingService = Depends(get_name_service)
+):
+    # Save incoming file to a temp JSON file
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
     async for chunk in request.stream():
         temp.write(chunk)
     temp.close()
 
-    # Each request gets its own unique directory
-    unique_dir = tempfile.mkdtemp(prefix="ndjson_")
-
+    # Return streaming response from the service
     return StreamingResponse(
-        convert_to_ndjson_stream(temp.name, output_dir=unique_dir),
+        service.convert_to_ndjson_stream(temp.name),
         media_type="application/x-ndjson"
     )
