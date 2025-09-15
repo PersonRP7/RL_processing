@@ -47,7 +47,7 @@ class TestNameProcessingService(unittest.TestCase):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.service = NameProcessingService(base_tmp=self.tmp_dir.name)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         """
         Clean up the temporary directory after each test.
         """
@@ -68,12 +68,12 @@ class TestNameProcessingService(unittest.TestCase):
         text = output.decode("utf-8")
 
         self.assertIn('"full_names": [', text)
-        self.assertIn('{"first": "Alice", "last": "Smith", "id": 1}', text)
-        self.assertIn('{"first": "Bob", "last": "Jones", "id": 2}', text)
+        self.assertIn('["Alice", "Smith", 1]', text)
+        self.assertIn('["Bob", "Jones", 2]', text)
         self.assertIn('"unpaired": [', text)
         self.assertIn("Pipeline finished", text)
 
-    def test_unpaired_entries(self):
+    def test_unpaired_entries(self) -> None:
         """
         Test behavior when some first or last names have no matching pair.
         Unpaired entries should appear in the 'unpaired' array.
@@ -89,10 +89,10 @@ class TestNameProcessingService(unittest.TestCase):
 
         self.assertIn('"full_names": [', text)
         self.assertIn('"unpaired": [', text)
-        self.assertIn('{"first": "Alice", "id": 1}', text)
-        self.assertIn('{"last": "Smith", "id": 2}', text)
+        self.assertIn('["Alice", 1]', text)
+        self.assertIn('["Smith", 2]', text)
 
-    def test_invalid_json_raises_error(self):
+    def test_invalid_json_raises_error(self) -> None:
         """
         Test that malformed JSON input raises an InvalidInputError.
         """

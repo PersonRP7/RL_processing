@@ -232,11 +232,11 @@ class NameProcessingService:
         last_current = next(last_iter, None)
 
         first = True
-        buffer = []
+        buffer: list[str] = []
 
         while first_current and last_current:
             if first_current[1] == last_current[1]:
-                full = {"first": first_current[0], "last": last_current[0], "id": first_current[1]}
+                full = [first_current[0], last_current[0], first_current[1]]
                 line = ("    " if first else "    ,") + json.dumps(full) + "\n"
                 buffer.append(line)
                 if len(buffer) >= batch_size:
@@ -277,17 +277,17 @@ class NameProcessingService:
         last_current = next(last_iter, None)
 
         first = True
-        buffer = []
+        buffer: list[str] = []
 
         while first_current or last_current:
             if first_current and (not last_current or first_current[1] < last_current[1]):
-                rec = {"first": first_current[0], "id": first_current[1]}
+                rec = [first_current[0], first_current[1]]
                 line = ("    " if first else "    ,") + json.dumps(rec) + "\n"
                 buffer.append(line)
                 first_current = next(first_iter, None)
                 first = False
             elif last_current and (not first_current or last_current[1] < first_current[1]):
-                rec = {"last": last_current[0], "id": last_current[1]}
+                rec = [last_current[0], last_current[1]]
                 line = ("    " if first else "    ,") + json.dumps(rec) + "\n"
                 buffer.append(line)
                 last_current = next(last_iter, None)
