@@ -5,6 +5,13 @@ import tempfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+class InvalidInputError(Exception):
+    """Raised when input JSON is invalid."""
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+        self.status_code = 400
+
 class NameProcessingService:
     def __init__(self, base_tmp: str = "/tmp"):
         """
