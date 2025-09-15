@@ -1,8 +1,8 @@
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
 import tempfile
 
-from services.name_processing import NameProcessingService
+from services.name_processing import NameProcessingService, InvalidInputError
 
 app = FastAPI()
 
@@ -10,9 +10,8 @@ app = FastAPI()
 def get_name_service():
     return NameProcessingService()
 
-
-@app.post("/upload-json-stream")
-async def upload_json_stream(
+@app.post("/combine-names")
+async def combine_names(
     request: Request,
     service: NameProcessingService = Depends(get_name_service)
 ):
@@ -22,8 +21,18 @@ async def upload_json_stream(
         temp.write(chunk)
     temp.close()
 
-    # Return streaming response from the service
-    return StreamingResponse(
-        service.convert_to_ndjson_stream(temp.name),
-        media_type="application/x-ndjson"
-    )
+    try:
+        gen = service.convert_to_ndjson_stream(temp.name)
+
+        first_chunk = next(gen)
+
+        # Wrap the generator with the first chunk re-injected
+        # in order to display the error response status
+        def safe_gen():
+            yield first_chunk
+            yield from gen
+
+        return StreamingResponse(safe_gen(), media_type="application/x-ndjson")
+
+    except InvalidInputError as e:
+         return Response(content=e.message, status_code=e.status_code)
