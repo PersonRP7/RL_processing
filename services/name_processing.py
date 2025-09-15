@@ -4,13 +4,25 @@ import ijson
 import tempfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from ijson.common import IncompleteJSONError
+
+# class InvalidInputError(Exception):
+#     """Raised when input JSON is invalid."""
+#     def __init__(self, message: str):
+#         super().__init__(message)
+#         self.message = message
+#         self.status_code = 400
 
 class InvalidInputError(Exception):
     """Raised when input JSON is invalid."""
-    def __init__(self, message: str):
+    def __init__(
+            self,
+            message: str = "Invalid JSON input", raw_error: Exception | None = None
+        ):
         super().__init__(message)
-        self.message = message
+        self.message = message         # safe, generic message for client
         self.status_code = 400
+        self.raw_error = raw_error     # keep raw exception for logging later
 
 class NameProcessingService:
     def __init__(self, base_tmp: str = "/tmp"):
@@ -31,32 +43,35 @@ class NameProcessingService:
         last_names_path = output_dir / "last_names.ndjson"
 
         # Step 1: Convert JSON -> NDJSON
-        with open(file_path, "rb") as infile, \
-             open(first_names_path, "w", encoding="utf-8") as f_first:
+        try:
+            with open(file_path, "rb") as infile, \
+                open(first_names_path, "w", encoding="utf-8") as f_first:
 
-            buffer = []
-            for item in ijson.items(infile, "first_names.item"):
-                line = json.dumps(item) + "\n"
-                f_first.write(line)
-                buffer.append(line)
-                if len(buffer) >= batch_size:
-                    yield "".join(buffer).encode("utf-8")
-                    buffer.clear()
-            if buffer:
-                yield "".join(buffer).encode("utf-8")
-
-            infile.seek(0)
-            with open(last_names_path, "w", encoding="utf-8") as f_last:
                 buffer = []
-                for item in ijson.items(infile, "last_names.item"):
+                for item in ijson.items(infile, "first_names.item"):
                     line = json.dumps(item) + "\n"
-                    f_last.write(line)
+                    f_first.write(line)
                     buffer.append(line)
                     if len(buffer) >= batch_size:
                         yield "".join(buffer).encode("utf-8")
                         buffer.clear()
                 if buffer:
                     yield "".join(buffer).encode("utf-8")
+
+                infile.seek(0)
+                with open(last_names_path, "w", encoding="utf-8") as f_last:
+                    buffer = []
+                    for item in ijson.items(infile, "last_names.item"):
+                        line = json.dumps(item) + "\n"
+                        f_last.write(line)
+                        buffer.append(line)
+                        if len(buffer) >= batch_size:
+                            yield "".join(buffer).encode("utf-8")
+                            buffer.clear()
+                    if buffer:
+                        yield "".join(buffer).encode("utf-8")
+        except (ValueError, IncompleteJSONError) as e:
+            raise InvalidInputError(raw_error=e)
 
         # Step 2: Automatically sort each NDJSON file
         yield b"# Sorting first_names...\n"
