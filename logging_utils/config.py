@@ -30,13 +30,6 @@ def setup_logging():
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
-    # Console handler (stdout → good for Docker)
-    console = logging.StreamHandler()
-    console.setFormatter(logging.Formatter(
-        "[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"
-    ))
-    logger.addHandler(console)
-
     # Rotating file handler (local dev logs)
     file_handler = logging.handlers.RotatingFileHandler(
         LOG_FILE, maxBytes=5_000_000, backupCount=5, encoding="utf-8"
