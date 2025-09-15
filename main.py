@@ -85,6 +85,7 @@ def get_name_service():
 #         # Here you map service exception -> HTTP response
 #         raise HTTPException(status_code=e.status_code, detail=e.message)
 
+# Initial working version
 @app.post("/combine-names")
 async def combine_names(
     request: Request,
@@ -102,6 +103,7 @@ async def combine_names(
         first_chunk = next(gen)
 
         # Wrap the generator with the first chunk re-injected
+        # in order to display the error response status
         def safe_gen():
             yield first_chunk
             yield from gen
@@ -110,4 +112,5 @@ async def combine_names(
 
     except InvalidInputError as e:
         # raise HTTPException(status_code=e.status_code, detail=e.message)
-        return Response(content = "400 error", status_code = 400)
+        # return Response(content = "400 error", status_code = 400)
+         return Response(content=e.message, status_code=e.status_code)
