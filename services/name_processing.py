@@ -181,13 +181,8 @@ class NameProcessingService:
                     chunk_paths.append(chunk_file)
 
             # Merge sorted chunks
-            def gen_file_lines(path: Path):
-                with path.open("r", encoding="utf-8") as f:
-                    for line in f:
-                        yield json.loads(line)
-
             merged_iter = heapq.merge(
-                *(gen_file_lines(p) for p in chunk_paths),
+                *(self.iter_ndjson(p) for p in chunk_paths),
                 key=lambda x: x[1]
             )
 
