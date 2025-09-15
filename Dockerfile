@@ -17,4 +17,4 @@ ENV PATH="/root/.local/bin:$PATH"
 WORKDIR /app
 
 # Keep container running interactively
-CMD ["bash"]
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5678", "--workers", "1"]
