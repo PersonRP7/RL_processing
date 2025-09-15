@@ -77,7 +77,7 @@ curl -i -X POST http://localhost:5678/combine-names \
 ```bash
 curl -i -X POST http://localhost:5678/combine-names \
   -H "Content-Type: application/json" \
-  -d '{"first_names":[["Bob",7]], "last_names":[["Smith",1234]]}'
+  -d '{"first_names":[["Bob",7], ["John", 1234]], "last_names":[["Smith",1234]]}'
 ```
 
 ### 3. Case: Only First Names
