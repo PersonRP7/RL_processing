@@ -1,3 +1,17 @@
+"""
+services.name_processing
+
+This module provides the NameProcessingService class for handling large JSON datasets
+of first and last names in a memory-efficient streaming fashion. It supports:
+
+- Converting large JSON input into NDJSON (newline-delimited JSON) files.
+- Disk-backed external sorting of NDJSON files.
+- Merging sorted first and last names into "full_names" and "unpaired" arrays
+  in a streaming way.
+- Input validation for malformed JSON data with a dedicated InvalidInputError.
+
+The service is designed to be used independently of FastAPI.
+"""
 import json
 import heapq
 import ijson
@@ -5,10 +19,18 @@ import tempfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from ijson.common import IncompleteJSONError
+from typing import Generator
 
 
 class InvalidInputError(Exception):
-    """Raised when input JSON is invalid."""
+    """
+    Raised when input JSON is invalid.
+
+    Attributes:
+        message (str): Safe, generic message for client consumption.
+        status_code (int): HTTP status code, default 400.
+        raw_error (Exception | None): Original exception object for logging purposes.
+    """
     def __init__(
             self,
             message: str = "Invalid JSON input", raw_error: Exception | None = None
@@ -19,18 +41,43 @@ class InvalidInputError(Exception):
         self.raw_error = raw_error     # keep raw exception for logging later
 
 class NameProcessingService:
+    """
+    Service for handling name processing tasks.
+
+    Each request gets its own temporary working directory under `base_tmp`.
+    The service provides streaming conversion, external sorting, and merging
+    of first and last names to support large datasets without exceeding memory.
+    """
+
     def __init__(self, base_tmp: str = "/tmp"):
         """
-        Service for handling name processing tasks.
-        Each request gets its own unique temp dir.
+        Initialize the service.
+
+        Args:
+            base_tmp (str): Base directory for temporary request-scoped files.
         """
         self.base_tmp = Path(base_tmp)
 
-    def convert_to_ndjson_stream(self, file_path: str, batch_size: int = 100):
+    def convert_to_ndjson_stream(
+            self,
+            file_path: str,
+            batch_size: int = 100
+        ) -> Generator[bytes, None, None]:
         """
-        Convert large JSON to NDJSON files in a unique request-scoped temp dir.
-        Yields lines for streaming back to client.
-        After finishing, runs external_sort_ndjson automatically on each NDJSON file.
+        Convert large JSON to NDJSON, sort, and merge into final output arrays.
+
+        This method yields bytes in a streaming fashion to support large JSON
+        input without exceeding memory.
+
+        Args:
+            file_path (str): Path to the input JSON file.
+            batch_size (int): Number of lines to buffer before yielding.
+
+        Yields:
+            bytes: Chunk of NDJSON formatted output.
+
+        Raises:
+            InvalidInputError: If the input JSON is malformed or cannot be processed.
         """
         output_dir = Path(tempfile.mkdtemp(prefix="ndjson_", dir=self.base_tmp))
         first_names_path = output_dir / "first_names.ndjson"
@@ -90,8 +137,17 @@ class NameProcessingService:
         sorted_suffix: str = ".sorted.ndjson"
     ) -> Path:
         """
-        External sort of an NDJSON file on disk.
-        Returns the path to the sorted file.
+        Perform an external disk-backed sort of an NDJSON file in
+        order to generate a file containing sequential entries
+        (Ordered by their ID from smaller to larger).
+
+        Args:
+            ndjson_path (Path): Path to the NDJSON file to sort.
+            batch_size (int): Number of records to sort in memory at a time.
+            sorted_suffix (str): Suffix to append to the sorted file name.
+
+        Returns:
+            Path: Path to the sorted NDJSON file.
         """
         ndjson_path = Path(ndjson_path)
         sorted_path = ndjson_path.with_name(ndjson_path.stem + sorted_suffix)
@@ -142,17 +198,37 @@ class NameProcessingService:
 
         return sorted_path
 
-    # -----------------------
-    # Merge helpers
-    # -----------------------
     def iter_ndjson(self, path: Path):
+        """
+        A merge helper.
+        Generator that yields each JSON object from an NDJSON file.
+
+        Args:
+            path (Path): Path to the NDJSON file.
+
+        Yields:
+            dict: JSON object from the NDJSON file.
+        """
         with path.open("r", encoding="utf-8") as f:
             for line in f:
                 yield json.loads(line)
 
-    def merge_full_names(self, first_path: Path, last_path: Path, batch_size: int = 100):
+    def merge_full_names(
+        self,
+        first_path: Path,
+        last_path: Path,
+        batch_size: int = 100
+        ) -> Generator[bytes, None, None]:
         """
-        Stream out the `"full_names": [...]` JSON array.
+        Merge first and last names into the 'full_names' array.
+
+        Args:
+            first_path (Path): Path to the sorted first_names NDJSON.
+            last_path (Path): Path to the sorted last_names NDJSON.
+            batch_size (int): Number of merged entries to buffer before yielding.
+
+        Yields:
+            bytes: JSON-formatted entries for 'full_names' array.
         """
         first_iter = self.iter_ndjson(first_path)
         last_iter = self.iter_ndjson(last_path)
@@ -182,9 +258,22 @@ class NameProcessingService:
         if buffer:
             yield "".join(buffer).encode("utf-8")
 
-    def merge_unpaired(self, first_path: Path, last_path: Path, batch_size: int = 100):
+    def merge_unpaired(
+            self,
+            first_path: Path,
+            last_path: Path,
+            batch_size: int = 100
+        ) -> Generator[bytes, None, None]:
         """
-        Stream out the `"unpaired": [...]` JSON array.
+        Merge first and last names that do not have matching IDs into 'unpaired'.
+
+        Args:
+            first_path (Path): Path to the sorted first_names NDJSON.
+            last_path (Path): Path to the sorted last_names NDJSON.
+            batch_size (int): Number of unpaired entries to buffer before yielding.
+
+        Yields:
+            bytes: JSON-formatted entries for 'unpaired' array.
         """
         first_iter = self.iter_ndjson(first_path)
         last_iter = self.iter_ndjson(last_path)
