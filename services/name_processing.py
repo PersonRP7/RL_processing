@@ -6,12 +6,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from ijson.common import IncompleteJSONError
 
-# class InvalidInputError(Exception):
-#     """Raised when input JSON is invalid."""
-#     def __init__(self, message: str):
-#         super().__init__(message)
-#         self.message = message
-#         self.status_code = 400
 
 class InvalidInputError(Exception):
     """Raised when input JSON is invalid."""

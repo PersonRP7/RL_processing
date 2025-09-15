@@ -1,9 +1,13 @@
+import tempfile
+import logging
 from fastapi import FastAPI, Request, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
-import tempfile
-
 from services.name_processing import NameProcessingService, InvalidInputError
+from logging_utils.config import setup_logging
 
+logger = setup_logging()
+
+logger = logging.getLogger(__name__)
 app = FastAPI()
 
 # Create one service instance (could later be swapped for a different implementation)
@@ -35,4 +39,9 @@ async def combine_names(
         return StreamingResponse(safe_gen(), media_type="application/x-ndjson")
 
     except InvalidInputError as e:
+         logger.error(
+             "Invalid input for /combine-names: %s",
+             e.raw_error,
+             exc_info=True
+         )
          return Response(content=e.message, status_code=e.status_code)
