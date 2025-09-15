@@ -52,8 +52,6 @@ class NameProcessingService:
                     yield "".join(buffer).encode("utf-8")
 
         # Step 2: Automatically sort each NDJSON file
-        # yield from self.external_sort_ndjson(first_names_path, batch_size=batch_size)
-        # yield from self.external_sort_ndjson(last_names_path, batch_size=batch_size)
         yield b"# Sorting first_names...\n"
         first_sorted = self.external_sort_ndjson(first_names_path, batch_size=batch_size)
 
