@@ -11,7 +11,7 @@ def get_name_service():
     return NameProcessingService()
 
 
-@app.post("/upload-json-stream")
+@app.post("/combine-names")
 async def upload_json_stream(
     request: Request,
     service: NameProcessingService = Depends(get_name_service)
