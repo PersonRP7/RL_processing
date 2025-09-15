@@ -18,6 +18,7 @@ If you do not have them in your environment, the utility can be run from inside 
 In the project root:
 
 - ```docker compose up```
+- ```docker exec -u root -it uv_fastapi bash```
 - ```cd uat```
 - ```uv run python3.12 payload_generator.py```
 
