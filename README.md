@@ -59,7 +59,7 @@ The API processes JSON payloads containing first names and last names, merges th
 3. Wait until **UV has finished provisioning** the Python environment and dependencies.
    The FastAPI server will then be available at:
    ```
-   http://localhost:5678
+   http://localhost:5678/combine-names
    ```
 
 ---
