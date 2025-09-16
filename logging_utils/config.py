@@ -18,25 +18,25 @@ LOG_DIR.mkdir(exist_ok=True)
 
 LOG_FILE = LOG_DIR / "app.log"
 
-def setup_logging():
+
+def setup_logging() -> logging.Logger:
     """
     Configure application-wide logging.
 
     - Creates a `logs/` directory (if not already present).
     - Sets up a file handler writing DEBUG+ logs to `logs/app.log`.
-    - Sets up a stream handler writing INFO+ logs to stdout (console).
-    - Applies a consistent timestamped log format across handlers.
+    - Applies a consistent timestamped log format.
     """
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
-    # Rotating file handler (local dev logs)
-    file_handler = logging.handlers.RotatingFileHandler(
-        LOG_FILE, maxBytes=5_000_000, backupCount=5, encoding="utf-8"
-    )
-    file_handler.setFormatter(logging.Formatter(
-        "[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"
-    ))
-    logger.addHandler(file_handler)
+    if not logger.handlers:  # avoid duplicate handlers
+        file_handler = logging.handlers.RotatingFileHandler(
+            LOG_FILE, maxBytes=5_000_000, backupCount=5, encoding="utf-8"
+        )
+        file_handler.setFormatter(logging.Formatter(
+            "[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"
+        ))
+        logger.addHandler(file_handler)
 
     return logger
