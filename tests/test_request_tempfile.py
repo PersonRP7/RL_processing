@@ -71,6 +71,7 @@ class TestSaveRequestToTempfile(unittest.TestCase):
         Simulates failure by patching tempfile.NamedTemporaryFile
         to raise an exception immediately.
         """
+        # Simulate signature compatibility
         def bad_tempfile(*args, **kwargs):
             raise IOError("disk full")
 
@@ -79,6 +80,35 @@ class TestSaveRequestToTempfile(unittest.TestCase):
         # Patch NamedTemporaryFile temporarily
         original_tempfile = tempfile.NamedTemporaryFile
         tempfile.NamedTemporaryFile = bad_tempfile
+
+        try:
+            with self.assertRaises(TempfileSaveError) as cm:
+                asyncio.run(save_request_to_tempfile(mock_request))
+
+            self.assertIn("Failed to save request body", str(cm.exception))
+            self.assertIsInstance(cm.exception.original_exception, IOError)
+        finally:
+            tempfile.NamedTemporaryFile = original_tempfile
+
+    def test_save_request_failure_write_error(self) -> None:
+        """
+        Test that TempfileSaveError is raised if writing to the temp file fails mid-stream.
+
+        Uses a custom temp file object that raises an exception on write.
+        """
+        class BadTempFile:
+            # Simulate signature compatibility
+            def __init__(self, *args, **kwargs):
+                self.closed = False
+            def write(self, chunk):
+                raise IOError("write error")
+            def close(self):
+                self.closed = True
+
+        mock_request = MockRequest([b"chunk1", b"chunk2"])
+
+        original_tempfile = tempfile.NamedTemporaryFile
+        tempfile.NamedTemporaryFile = lambda *a, **kw: BadTempFile()
 
         try:
             with self.assertRaises(TempfileSaveError) as cm:
