@@ -1,3 +1,9 @@
+"""API data generator functionality
+
+Used to generate the API payloads of variable size,
+covering all the defined API use cases.
+"""
+
 import json
 import random
 import string
