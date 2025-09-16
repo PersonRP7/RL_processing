@@ -28,6 +28,9 @@ The API processes JSON payloads containing first names and last names, merges th
 - **`uat/`**
   User Acceptance Testing utilities. Includes `payload_generator.py` for generating JSON payloads of various scenarios.
 
+- **`utils/`**
+  General request processing utils.
+
 - **`tests/`**
   Unit tests for the NameProcessingService and related functionality.
 
