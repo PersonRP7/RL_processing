@@ -51,7 +51,7 @@ async def combine_names(
             e.original_exception,
             exc_info=True
             )
-        return Response(content=e.message, status_code=e.status_code)
+        return Response(content=e.message, status_code=500)
 
     # Step 2: Process with the service
     try:
@@ -78,4 +78,4 @@ async def combine_names(
             e.raw_error,
             exc_info=True,
         )
-        return Response(content=e.message, status_code=e.status_code)
+        return Response(content=e.message, status_code=400)
