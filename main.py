@@ -59,6 +59,14 @@ async def combine_names(
         first_chunk = next(gen)
 
         def safe_gen():
+            """Generator helper
+            If the generator fails on its first `next` call,
+            FastAPI won't yet be inside the `StreamingResponse`,
+            causing the client to receive a 500 error without
+            custom handling. If the generator raises an error at
+            `first_chunk` a customized `Response` can be returned.
+            If not, `safe_gen` is defined again.
+            """
             yield first_chunk
             yield from gen
 
