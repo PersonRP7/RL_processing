@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: uv-fastapi-initial   # optional tag for convenience
+    image: uv-fastapi-initial
     container_name: uv_fastapi
     working_dir: /app
     volumes:
