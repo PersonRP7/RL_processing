@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from services.name_processing import NameProcessingService, InvalidInputError
 from logging_utils.config import setup_logging
 from utils.io_utils import save_request_to_tempfile, TempfileSaveError
+from anyio import to_thread
 
 logger = setup_logging()
 
@@ -23,7 +24,6 @@ def get_name_service() -> NameProcessingService:
         NameProcessingService: Instance of the name processing service.
     """
     return NameProcessingService()
-
 
 @app.post("/combine-names")
 async def combine_names(
@@ -60,29 +60,21 @@ async def combine_names(
             )
         return Response(content=e.message, status_code=500)
 
-    # Step 2: Process with the service
-    try:
-        gen = service.convert_to_ndjson_stream(temp_path)
-        first_chunk = next(gen)
+    def sync_gen():
+        return service.convert_to_ndjson_stream(temp_path)
 
-        def safe_gen():
-            """Generator helper
-            If the generator fails on its first `next` call,
-            FastAPI won't yet be inside the `StreamingResponse`,
-            causing the client to receive a 500 error without
-            custom handling. If the generator raises an error at
-            `first_chunk` a customized `Response` can be returned.
-            If not, `safe_gen` is defined again.
-            """
-            yield first_chunk
-            yield from gen
+    def next_item(gen):
+        try:
+            return next(gen)
+        except StopIteration:
+            return None
 
-        return StreamingResponse(safe_gen(), media_type="application/x-ndjson")
+    async def async_gen():
+        gen = await to_thread.run_sync(sync_gen)
+        while True:
+            chunk = await to_thread.run_sync(next_item, gen)
+            if chunk is None:
+                break
+            yield chunk
 
-    except InvalidInputError as e:
-        logger.error(
-            "Invalid input for /combine-names: %s",
-            e.raw_error,
-            exc_info=True,
-        )
-        return Response(content=e.message, status_code=400)
+    return StreamingResponse(async_gen(), media_type="application/x-ndjson")
