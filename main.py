@@ -9,6 +9,8 @@ from fastapi.responses import StreamingResponse
 from services.name_processing import NameProcessingService, InvalidInputError
 from logging_utils.config import setup_logging
 from utils.io_utils import save_request_to_tempfile, TempfileSaveError
+from utils.generator_utils import sync_gen_to_async_gen, stream_sync_service
+from anyio import to_thread
 
 logger = setup_logging()
 
@@ -60,29 +62,5 @@ async def combine_names(
             )
         return Response(content=e.message, status_code=500)
 
-    # Step 2: Process with the service
-    try:
-        gen = service.convert_to_ndjson_stream(temp_path)
-        first_chunk = next(gen)
-
-        def safe_gen():
-            """Generator helper
-            If the generator fails on its first `next` call,
-            FastAPI won't yet be inside the `StreamingResponse`,
-            causing the client to receive a 500 error without
-            custom handling. If the generator raises an error at
-            `first_chunk` a customized `Response` can be returned.
-            If not, `safe_gen` is defined again.
-            """
-            yield first_chunk
-            yield from gen
-
-        return StreamingResponse(safe_gen(), media_type="application/x-ndjson")
-
-    except InvalidInputError as e:
-        logger.error(
-            "Invalid input for /combine-names: %s",
-            e.raw_error,
-            exc_info=True,
-        )
-        return Response(content=e.message, status_code=400)
+    # Step 2: Process JSON in an async generator
+    return await stream_sync_service(service.convert_to_ndjson_stream, temp_path)
