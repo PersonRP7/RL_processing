@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from services.name_processing import NameProcessingService, InvalidInputError
 from logging_utils.config import setup_logging
 from utils.io_utils import save_request_to_tempfile, TempfileSaveError
+from utils.generator_utils import sync_gen_to_async_gen, stream_sync_service
 from anyio import to_thread
 
 logger = setup_logging()
@@ -24,6 +25,7 @@ def get_name_service() -> NameProcessingService:
         NameProcessingService: Instance of the name processing service.
     """
     return NameProcessingService()
+
 
 @app.post("/combine-names")
 async def combine_names(
@@ -60,21 +62,5 @@ async def combine_names(
             )
         return Response(content=e.message, status_code=500)
 
-    def sync_gen():
-        return service.convert_to_ndjson_stream(temp_path)
-
-    def next_item(gen):
-        try:
-            return next(gen)
-        except StopIteration:
-            return None
-
-    async def async_gen():
-        gen = await to_thread.run_sync(sync_gen)
-        while True:
-            chunk = await to_thread.run_sync(next_item, gen)
-            if chunk is None:
-                break
-            yield chunk
-
-    return StreamingResponse(async_gen(), media_type="application/x-ndjson")
+    # Step 2: Process JSON in an async generator
+    return await stream_sync_service(service.convert_to_ndjson_stream, temp_path)
