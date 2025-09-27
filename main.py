@@ -45,6 +45,13 @@ async def combine_names(
     # Step 1: Save the incoming body to a tempfile
     try:
         temp_path = await save_request_to_tempfile(request)
+    except InvalidInputError as e:
+        logger.error(
+            "Invalid input while saving request body: %s",
+            e.raw_error or e.message,
+            exc_info=True,
+        )
+        return Response(content=e.message, status_code=e.status_code)
     except TempfileSaveError as e:
         logger.error(
             "Internal error while saving request body: %s",
