@@ -23,7 +23,34 @@ class TempfileSaveError(Exception):
         self.message = message
         self.original_exception = original_exception
 
+# async def save_request_to_tempfile(request: Request, suffix: str = ".json") -> str:
+#     try:
+#         temp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+#         validator = streaming_validator()
+
+#         try:
+#             async for chunk in request.stream():
+#                 temp.write(chunk)
+#             temp.flush()
+
+#             # Re-open the file for validation (streaming validation)
+#             with open(temp.name, "rb") as f:
+#                 validator.validate(f)
+
+#         finally:
+#             temp.close()
+
+#         return temp.name
+
+#     except InvalidInputError:
+#         raise  # propagate 400-level validation error
+#     except Exception as e:
+#         raise TempfileSaveError("Failed to save request body to temporary file", e)
+
 async def save_request_to_tempfile(request: Request, suffix: str = ".json") -> str:
+    """
+    Save the request to a tempfile while validating it in streaming fashion.
+    """
     try:
         temp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
         validator = streaming_validator()
@@ -31,12 +58,9 @@ async def save_request_to_tempfile(request: Request, suffix: str = ".json") -> s
         try:
             async for chunk in request.stream():
                 temp.write(chunk)
+                validator.feed(chunk)
             temp.flush()
-
-            # Re-open the file for validation (streaming validation)
-            with open(temp.name, "rb") as f:
-                validator.validate(f)
-
+            validator.finish()  # Ensure remaining data is valid
         finally:
             temp.close()
 
