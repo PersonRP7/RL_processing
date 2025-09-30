@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        UV_VERSION: ${UV_VERSION}
+        FASTAPI_PORT: ${FASTAPI_PORT}
     image: uv-fastapi-initial
     container_name: uv_fastapi
     working_dir: /app
